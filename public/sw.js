@@ -1,8 +1,9 @@
-const CACHE = "alea-terrain-v1";
+const CACHE = "alea-terrain-v2";
+const BASE = self.registration.scope;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(["/", "/favicon.svg", "/formulaire-storme.pdf"])),
+    caches.open(CACHE).then((cache) => cache.addAll([BASE, BASE + "favicon.svg", BASE + "formulaire-storme.pdf"])),
   );
   self.skipWaiting();
 });
@@ -34,7 +35,7 @@ self.addEventListener("fetch", (event) => {
         const hit = await caches.match(request);
         if (hit) return hit;
         if (request.mode === "navigate") {
-          const home = await caches.match("/");
+          const home = await caches.match(BASE);
           if (home) return home;
         }
         return new Response("Hors ligne", { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });

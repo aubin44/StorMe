@@ -76,7 +76,7 @@ export async function buildRelevePdf(
   lang: Lang = "fr",
 ): Promise<{ bytes: Uint8Array; filename: string }> {
   const d = dict(lang);
-  const response = await fetch("/formulaire-storme.pdf");
+  const response = await fetch(`${import.meta.env.BASE_URL}formulaire-storme.pdf`);
   if (!response.ok) throw new Error(d.pdfFormMissing);
   const doc = await PDFDocument.load(await response.arrayBuffer());
   const form = doc.getForm();

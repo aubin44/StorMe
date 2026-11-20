@@ -20,12 +20,20 @@ des StorMe-Formulars des Staates Freiburg als bearbeitbares PDF.*
 > sont remplis avec le texte saisi, quelle que soit la langue de l'interface. Les annexes
 > du PDF (carte, photos) suivent la langue choisie.
 
+## GitHub Pages
+
+Le site statique est construit et publié automatiquement à chaque push sur `main`
+(`.github/workflows/pages.yml`). Réglage unique : *Settings → Pages → Source : GitHub Actions*.
+Adresse : `https://aubin44.github.io/StorMe/`
+
 ## Développement
 
 ```bash
 npm install
 npm run dev        # http://localhost:8080
 npm run build
+# version statique (GitHub Pages) :
+BASE_PATH=/StorMe/ npx vite build --config vite.netlify.config.ts
 npm run typecheck
 ```
 
