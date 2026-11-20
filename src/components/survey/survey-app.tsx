@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Download,
   FileDown,
   ImagePlus,
   LocateFixed,
@@ -27,6 +28,7 @@ import { communeFromLv95 } from "@/lib/releve/commune";
 import { groupDigits, inSwitzerland, lv95ToWgs, parseCoord, wgsToLv95 } from "@/lib/releve/coords";
 import { deleteReleve, listReleves, rememberRapporteur, rememberedRapporteur, saveReleve } from "@/lib/releve/db";
 import { renderTopoPng } from "@/lib/releve/map-snapshot";
+import { saveAreaOffline } from "@/lib/releve/offline-map";
 import { buildRelevePdf, savePdfFile } from "@/lib/releve/pdf";
 import { fileToPhoto } from "@/lib/releve/photos";
 import {
@@ -87,6 +89,7 @@ export function SurveyApp() {
   const [records, setRecords] = useState<Releve[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState<Releve | null>(null);
+  const [fresh, setFresh] = useState(false);
   const { t } = useI18n();
 
   useEffect(() => {
@@ -104,6 +107,7 @@ export function SurveyApp() {
     const draft = blankReleve(rememberedRapporteur());
     await saveReleve(draft);
     setRecords((current) => [draft, ...(current ?? [])]);
+    setFresh(true);
     setEditing(draft);
   }
 
@@ -127,6 +131,7 @@ export function SurveyApp() {
     return (
       <Wizard
         initial={editing}
+        initialStep={fresh ? 0 : STEP_COUNT - 1}
         onClose={(latest) => {
           setRecords((current) => replaceRecord(current ?? [], latest));
           setEditing(null);
@@ -141,7 +146,7 @@ export function SurveyApp() {
     );
   }
 
-  return <Home records={records} onNew={openNew} onOpen={setEditing} onDelete={async (id) => {
+  return <Home records={records} onNew={openNew} onOpen={(releve) => { setFresh(false); setEditing(releve); }} onDelete={async (id) => {
     await deleteReleve(id);
     setRecords((current) => (current ?? []).filter((item) => item.id !== id));
   }} />;
@@ -383,21 +388,29 @@ interface BeforeInstallPromptEvent extends Event {
 
 function Wizard({
   initial,
+  initialStep,
   onClose,
   onSaved,
   onDelete,
 }: {
   initial: Releve;
+  initialStep: number;
   onClose: (latest: Releve) => void;
   onSaved: (latest: Releve) => void;
   onDelete: (id: string) => void;
 }) {
   const [draft, setDraft] = useState(initial);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(initialStep);
+
+  // Chaque étape s'ouvre en haut de page.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [step]);
   const { t, d, lang } = useI18n();
   const [gpsError, setGpsError] = useState<keyof Dict | null>(null);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [communeBusy, setCommuneBusy] = useState(false);
+  const communeTouched = useRef(initial.commune.trim().length > 0);
   const [communeNote, setCommuneNote] = useState<keyof Dict | null>(null);
   const [photoError, setPhotoError] = useState<keyof Dict | null>(null);
   const [exportState, setExportState] = useState<ExportState>("idle");
@@ -482,7 +495,10 @@ function Wizard({
     try {
       const name = await communeFromLv95(e, n);
       if (!name) setCommuneNote("communeNotFound");
-      else patch({ commune: name });
+      else {
+        communeTouched.current = false;
+        patch({ commune: name });
+      }
     } catch {
       setCommuneNote("networkDown");
     } finally {
@@ -508,6 +524,26 @@ function Wizard({
     }
     if (next.length) patch({ photos: [...draft.photos, ...next] });
   }
+
+  // Commune proposée d'après la position, tant que l'utilisateur ne l'a pas saisie lui-même.
+  useEffect(() => {
+    const e = parseCoord(draft.x);
+    const n = parseCoord(draft.y);
+    if (e == null || n == null || communeTouched.current || !inSwitzerland(e, n)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const name = await communeFromLv95(e, n);
+        if (!cancelled && name && !communeTouched.current) setDraft((current) => ({ ...current, commune: name }));
+      } catch {
+        /* hors ligne : la commune se saisit à la main */
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [draft.x, draft.y]);
 
   const missing = missingBits(draft, d);
   const east = parseCoord(draft.x);
@@ -587,7 +623,7 @@ function Wizard({
       const file = new File([new Uint8Array(bytes)], filename, { type: "application/pdf" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: subject, text: `${MAIL_TO}\n\n${body}` });
+          await navigator.share({ files: [file], title: subject, text: body });
           await persist();
           setExportState("shared");
           return;
@@ -668,7 +704,10 @@ function Wizard({
             onCommune={identifyCommune}
             onPick={setPosition}
             onCoord={setManualCoord}
-            onCommuneText={(commune) => patch({ commune })}
+            onCommuneText={(commune) => {
+              communeTouched.current = commune.trim().length > 0;
+              patch({ commune });
+            }}
           />
         ) : null}
         {step === 2 ? (
@@ -677,11 +716,11 @@ function Wizard({
               <input className={inputClass} type="date" value={draft.date} onChange={(event) => patch({ date: event.target.value })} />
             </Field>
             <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-              <Field label={t("time")}>
+              <Field label={t("time")} hint={t("optional")}>
                 <input className={inputClass} type="time" value={draft.heure} onChange={(event) => patch({ heure: event.target.value })} />
               </Field>
               <Field label={t("duration")} hint={t("durationHint")}>
-                <input className={inputClass} value={draft.duree} onChange={(event) => patch({ duree: event.target.value })} />
+                <input className={inputClass} autoComplete="off" value={draft.duree} onChange={(event) => patch({ duree: event.target.value })} />
               </Field>
             </div>
           </div>
@@ -743,10 +782,10 @@ function Wizard({
               </div>
             </fieldset>
             <Field label={t("organizedBy")}>
-              <input className={inputClass} value={draft.organiseesPar} onChange={(event) => patch({ organiseesPar: event.target.value })} />
+              <input className={inputClass} autoComplete="off" autoCorrect="off" name="mesures-organisees" value={draft.organiseesPar} onChange={(event) => patch({ organiseesPar: event.target.value })} />
             </Field>
             <Field label={t("discussWith")}>
-              <input className={inputClass} value={draft.discuterAvec} onChange={(event) => patch({ discuterAvec: event.target.value })} />
+              <input className={inputClass} autoComplete="off" autoCorrect="off" name="mesures-a-discuter" value={draft.discuterAvec} onChange={(event) => patch({ discuterAvec: event.target.value })} />
             </Field>
             <Field label={t("proposals")} hint={t("proposalsHint")}>
               <textarea className={`${inputClass} min-h-32`} value={draft.propositions} onChange={(event) => patch({ propositions: event.target.value })} />
@@ -906,6 +945,7 @@ function StepPlace({
         {t("placeIntro")}
       </p>
       <FieldMap lat={draft.lat} lng={draft.lng} onPick={onPick} />
+      <OfflineMap lat={draft.lat} lng={draft.lng} />
       <button
         type="button"
         onClick={onLocate}
@@ -939,8 +979,8 @@ function StepPlace({
           {outside ? t("outsideSwitzerland") : ""}
         </p>
       ) : null}
-      <Field label={t("commune")}>
-        <input className={inputClass} value={draft.commune} onChange={(event) => onCommuneText(event.target.value)} />
+      <Field label={t("commune")} hint={t("communeHint")}>
+        <input className={inputClass} autoComplete="off" value={draft.commune} onChange={(event) => onCommuneText(event.target.value)} />
       </Field>
       <button
         type="button"
@@ -950,6 +990,46 @@ function StepPlace({
         {communeBusy ? t("findingCommune") : t("fillCommune")}
       </button>
       {communeNote ? <p className="text-sm text-muted">{t(communeNote)}</p> : null}
+    </div>
+  );
+}
+
+function OfflineMap({ lat, lng }: { lat: number | null; lng: number | null }) {
+  const { t, d } = useI18n();
+  const [state, setState] = useState<"idle" | "busy" | "done" | "partial" | "fail">("idle");
+  const [progress, setProgress] = useState<[number, number]>([0, 0]);
+  if (lat == null || lng == null) return null;
+  async function run() {
+    setState("busy");
+    try {
+      const failed = await saveAreaOffline(lat as number, lng as number, (done, total) => setProgress([done, total]));
+      setState(failed > 0 ? "partial" : "done");
+    } catch {
+      setState("fail");
+    }
+  }
+  return (
+    <div className="rounded-xl border border-line bg-surface px-3 py-3">
+      <button
+        type="button"
+        onClick={run}
+        disabled={state === "busy"}
+        className="inline-flex items-center gap-2 text-sm font-semibold text-pine disabled:opacity-60"
+      >
+        <Download className="h-4 w-4" aria-hidden="true" />
+        {t("offlineSave")}
+      </button>
+      <p className="mt-1 text-sm leading-snug text-muted">
+        {state === "busy"
+          ? d.offlineBusy(progress[0], progress[1])
+          : state === "done"
+            ? t("offlineDone")
+            : state === "partial"
+              ? t("offlinePartial")
+              : state === "fail"
+                ? t("offlineFail")
+                : t("offlineHint")}
+      </p>
     </div>
   );
 }
