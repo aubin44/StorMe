@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-netlify/
+.output/
+.project_id
+.github_repo
+.env
+.env.*
