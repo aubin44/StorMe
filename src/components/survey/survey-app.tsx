@@ -44,7 +44,9 @@ import {
 const STEP_COUNT = 9;
 const MAIL_TO = "laurent.aubin@fr.ch";
 
-type ExportState = "idle" | "map" | "pdf" | "done" | "mailed" | "error";
+type ExportState = "idle" | "map" | "pdf" | "done" | "mailed" | "shared" | "error";
+
+type BuiltPdf = { bytes: Uint8Array; filename: string };
 
 const ICONS: Record<ProcessusId, LucideIcon> = {
   chute: Mountain,
@@ -200,7 +202,7 @@ function Home({
   onOpen: (releve: Releve) => void;
   onDelete: (id: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   return (
     <Shell>
       <button
@@ -224,13 +226,16 @@ function Home({
           </p>
         </div>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {records.map((releve) => (
-            <li key={releve.id}>
-              <RecordCard releve={releve} onOpen={() => onOpen(releve)} onDelete={() => onDelete(releve.id)} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <h2 className="mt-7 font-display text-xl text-pine">{d.recordsTitle(records.length)}</h2>
+          <ul className="mt-3 space-y-3">
+            {records.map((releve) => (
+              <li key={releve.id}>
+                <RecordCard releve={releve} onOpen={() => onOpen(releve)} onDelete={() => onDelete(releve.id)} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </Shell>
   );
@@ -249,26 +254,55 @@ function RecordCard({
   const { t, d } = useI18n();
   const option = processusById(releve.processus);
   const Icon = option ? ICONS[option.id] : Mountain;
+  const ready = missingBits(releve, d).length === 0;
+  const hasPosition = Boolean(releve.x && releve.y);
   return (
-    <article className="rounded-xl border border-line bg-surface">
-      <button type="button" onClick={onOpen} className="flex w-full items-start gap-3 px-4 py-4 text-left">
-        <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine text-bg">
-          <Icon className="h-5 w-5" aria-hidden="true" />
+    <article className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_1px_0_rgba(27,58,47,0.06),0_6px_16px_-10px_rgba(27,58,47,0.35)]">
+      <button type="button" onClick={onOpen} className="flex w-full items-stretch gap-0 text-left">
+        <span className="relative block w-24 shrink-0 self-stretch bg-line">
+          {option ? (
+            <HazardScene id={option.id} className="absolute inset-0 h-full w-full" />
+          ) : (
+            <span className="flex h-full items-center justify-center bg-pine text-bg">
+              <Mountain className="h-8 w-8" aria-hidden="true" />
+            </span>
+          )}
         </span>
-        <span className="min-w-0">
-          <span className="block font-semibold text-ink">{option ? t(`processus.${option.id}.label` as keyof Dict) : t("releveStarted")}</span>
-          <span className="mt-1 block text-sm text-muted">
-            {[releve.commune || t("communeToSpecify"), formatListDate(releve.date) ?? t("datePending")].join(" · ")}
+        <span className="min-w-0 flex-1 px-4 py-3">
+          <span className="flex items-start justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5 font-display text-lg leading-tight text-pine">
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{option ? t(`processus.${option.id}.label` as keyof Dict) : t("releveStarted")}</span>
+            </span>
           </span>
-          <span className="mt-1 block text-sm text-ink">
-            {releve.x && releve.y
-              ? `X ${groupDigits(releve.x)}  ·  Y ${groupDigits(releve.y)}`
-              : t("positionNotSet")}
-            {releve.photos.length > 0 ? `  ·  ${d.photoCount(releve.photos.length)}` : ""}
+          <span className="mt-1 block truncate text-base font-semibold text-ink">
+            {releve.commune || t("communeToSpecify")}
+          </span>
+          <span className="mt-0.5 block text-sm text-muted">{formatListDate(releve.date) ?? t("datePending")}</span>
+          <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-1 ${
+                ready ? "bg-pine text-bg" : "bg-amber/15 text-amber"
+              }`}
+            >
+              {ready ? t("statusReady") : t("statusDraft")}
+            </span>
+            {releve.photos.length > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2.5 py-1 text-ink">
+                <Camera className="h-3 w-3" aria-hidden="true" />
+                {releve.photos.length}
+              </span>
+            ) : null}
+            {hasPosition ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2.5 py-1 text-ink">
+                <LocateFixed className="h-3 w-3" aria-hidden="true" />
+                {groupDigits(releve.x)} / {groupDigits(releve.y)}
+              </span>
+            ) : null}
           </span>
         </span>
       </button>
-      <div className="flex justify-end border-t border-line px-3 py-2">
+      <div className="flex justify-end border-t border-line px-3 py-1.5">
         {confirm ? (
           <div className="flex items-center gap-2">
             <button type="button" className="px-3 py-2 text-sm text-muted" onClick={() => setConfirm(false)}>
@@ -479,6 +513,36 @@ function Wizard({
   const east = parseCoord(draft.x);
   const north = parseCoord(draft.y);
   const outside = east != null && north != null && !inSwitzerland(east, north);
+  const missingCount = missing.length;
+  const [prepared, setPrepared] = useState<BuiltPdf | null>(null);
+  const [preparing, setPreparing] = useState(false);
+
+  // Sur la dernière étape, le PDF est préparé d'avance : le partage / l'envoi part ensuite immédiatement.
+  useEffect(() => {
+    if (step !== STEP_COUNT - 1 || missingCount > 0) {
+      setPrepared(null);
+      setPreparing(false);
+      return;
+    }
+    let cancelled = false;
+    setPrepared(null);
+    setPreparing(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const map = draft.lat != null && draft.lng != null ? await renderTopoPng(draft.lat, draft.lng) : null;
+        const built = await buildRelevePdf(draft, map, lang);
+        if (!cancelled) setPrepared(built);
+      } catch {
+        /* l'export refera la tentative et affichera l'erreur */
+      } finally {
+        if (!cancelled) setPreparing(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [step, draft, lang, missingCount]);
 
   async function persist() {
     const saved = { ...draft, updatedAt: new Date().toISOString() };
@@ -487,7 +551,8 @@ function Wizard({
     return saved;
   }
 
-  async function makePdf() {
+  async function makePdf(): Promise<BuiltPdf> {
+    if (prepared) return prepared;
     setExportState("map");
     setExportError(null);
     const map = draft.lat != null && draft.lng != null ? await renderTopoPng(draft.lat, draft.lng) : null;
@@ -512,13 +577,28 @@ function Wizard({
     if (missing.length) return;
     try {
       const { bytes, filename } = await makePdf();
-      savePdfFile(bytes, filename);
-      await persist();
       const kind = draft.processus ? t(`processus.${draft.processus}.label` as keyof Dict) : t("hazardNotChosen");
       const place = draft.commune.trim() || t("pdfPlaceUnknown");
       const day = formatListDate(draft.date) ?? "";
       const subject = d.mailSubject(kind, place, day);
       const body = d.mailBody(kind, place, day, groupDigits(draft.x), groupDigits(draft.y), draft.rapporteur.trim());
+
+      // Téléphone / tablette : la feuille de partage joint vraiment le PDF au message.
+      const file = new File([new Uint8Array(bytes)], filename, { type: "application/pdf" });
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: subject, text: `${MAIL_TO}\n\n${body}` });
+          await persist();
+          setExportState("shared");
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+        }
+      }
+
+      // Ordinateur : PDF téléchargé + e-mail prérempli à joindre.
+      savePdfFile(bytes, filename);
+      await persist();
       setExportState("mailed");
       window.setTimeout(() => {
         window.location.href = `mailto:${MAIL_TO}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -692,6 +772,7 @@ function Wizard({
             missing={missing}
             exportState={exportState}
             exportError={exportError}
+            preparing={preparing}
             onGo={setStep}
             onExport={exportPdf}
             onMail={sendMail}
@@ -733,7 +814,7 @@ function Wizard({
               <button
                 type="button"
                 className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-amber text-sm font-semibold text-bg disabled:opacity-40"
-                disabled={missing.length > 0 || exportState === "map" || exportState === "pdf"}
+                disabled={missing.length > 0 || preparing || exportState === "map" || exportState === "pdf"}
                 onClick={exportPdf}
               >
                 <FileDown className="h-4 w-4" aria-hidden="true" />
@@ -789,7 +870,6 @@ function StepProcess({ value, onChange }: { value: ProcessusId | ""; onChange: (
           );
         })}
       </div>
-      <p className="text-sm leading-relaxed text-muted">{t("processNote2")}</p>
     </div>
   );
 }
@@ -1014,6 +1094,7 @@ function StepRecap({
   missing,
   exportState,
   exportError,
+  preparing,
   onGo,
   onExport,
   onMail,
@@ -1022,6 +1103,7 @@ function StepRecap({
   missing: string[];
   exportState: ExportState;
   exportError: string | null;
+  preparing: boolean;
   onGo: (step: number) => void;
   onExport: () => void;
   onMail: () => void;
@@ -1029,7 +1111,7 @@ function StepRecap({
   const { t, d } = useI18n();
   const urls = usePhotoUrls(draft.photos);
   const option = processusById(draft.processus);
-  const busy = exportState === "map" || exportState === "pdf";
+  const busy = preparing || exportState === "map" || exportState === "pdf";
   const label = (key: string) => t(key as keyof Dict);
   return (
     <div className="space-y-4">
@@ -1107,42 +1189,44 @@ function StepRecap({
         ) : null}
       </RecapSection>
 
-      <section className="rounded-xl border-2 border-pine bg-surface px-4 py-4">
-        <h2 className="font-display text-lg text-pine">{t("exportTitle")}</h2>
-        <p className="mt-1 text-sm leading-relaxed text-muted">{t("closeNote")}</p>
+      <section className="rounded-xl border-2 border-pine bg-surface px-4 py-5">
+        <h2 className="font-display text-xl text-pine">{t("exportTitle")}</h2>
         {missing.length > 0 ? (
-          <p className="mt-3 text-sm font-semibold text-ink">{d.missingBefore(missing.join(", "))}</p>
+          <p className="mt-3 text-base font-semibold text-ink">{d.missingBefore(missing.join(", "))}</p>
         ) : (
-          <p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-pine">
-            <Check className="h-4 w-4" aria-hidden="true" />
-            {t("ready")}
+          <p className="mt-3 inline-flex items-center gap-1 text-base font-semibold text-pine">
+            <Check className="h-5 w-5" aria-hidden="true" />
+            {preparing ? t("writingReport") : t("ready")}
           </p>
         )}
-        <div className="mt-4 space-y-2">
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={missing.length > 0 || busy}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-amber text-sm font-semibold text-bg disabled:opacity-40"
-          >
-            <FileDown className="h-4 w-4" aria-hidden="true" />
-            {t("exportPdf")}
-          </button>
+        <div className="mt-4 space-y-3">
           <button
             type="button"
             onClick={onMail}
             disabled={missing.length > 0 || busy}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-pine text-sm font-semibold text-bg disabled:opacity-40"
+            className="flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-pine px-4 py-3 text-bg disabled:opacity-40"
           >
-            <Mail className="h-4 w-4" aria-hidden="true" />
-            {t("sendMail")}
+            <Mail className="h-6 w-6 shrink-0" aria-hidden="true" />
+            <span className="text-left">
+              <span className="block text-lg font-semibold leading-tight">{t("sendMail")}</span>
+              <span className="mt-0.5 block text-sm leading-tight text-bg/85">{d.forwardTo(MAIL_TO)}</span>
+            </span>
           </button>
-          <p className="text-xs leading-relaxed text-muted">{d.mailHint(MAIL_TO)}</p>
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={missing.length > 0 || busy}
+            className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-amber text-lg font-semibold text-bg disabled:opacity-40"
+          >
+            <FileDown className="h-5 w-5" aria-hidden="true" />
+            {t("exportPdf")}
+          </button>
         </div>
         {exportState === "map" ? <p className="mt-3 text-sm">{t("preparingMap")}</p> : null}
         {exportState === "pdf" ? <p className="mt-3 text-sm">{t("writingReport")}</p> : null}
         {exportState === "done" ? <p className="mt-3 text-sm font-semibold text-pine">{t("exported")}</p> : null}
         {exportState === "mailed" ? <p className="mt-3 text-sm font-semibold text-pine">{t("mailed")}</p> : null}
+        {exportState === "shared" ? <p className="mt-3 text-sm font-semibold text-pine">{t("shared")}</p> : null}
         {exportError ? <p className="mt-3 text-sm text-ink">{exportError}</p> : null}
       </section>
     </div>

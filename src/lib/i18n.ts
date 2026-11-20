@@ -67,8 +67,6 @@ const fr = {
   "processus.crue.hint": "Aussi érosion latérale et charriage",
   processNote:
     "Un seul processus principal. Il coche la case correspondante du formulaire fribourgeois.",
-  processNote2:
-    "Effondrement et chute de pierre cochent tous deux « Chute / éboulement rocheux ». Le type exact est écrit dans la description.",
   pdfTypePrefix: "Type",
 
   // importance / mesures
@@ -125,7 +123,7 @@ const fr = {
   reporterLabel: "Nom et fonction du rapporteur",
   reportDate: "Date du rapport",
   photosTitle: "Photos du processus",
-  photosHint: "Elles sont ajoutées en annexe du PDF. Le point 10 du formulaire reste vide.",
+  photosHint: "Elles sont ajoutées en annexe du PDF.",
   takePhoto: "Prendre",
   gallery: "Galerie",
   remove: "Retirer",
@@ -134,8 +132,6 @@ const fr = {
   photoUnreadable: "Une photo n'a pas pu être lue. Utilisez un JPG ou un PNG.",
   hazardNotChosen: "Aléa non choisi",
   communeNotEntered: "Commune non saisie",
-  closeNote:
-    "Le PDF reprend le formulaire de l'État de Fribourg. Le n° StorMe et le point 10 restent vides, et tous les champs restent modifiables. La carte topo et les photos suivent en annexe. Les cases « envoi .shp / .jpg » ne sont pas cochées.",
   missingBefore: (list: string) => `Avant l'export, il manque ${list}.`,
   ready: "Prêt à exporter.",
   preparingMap: "Préparation de la carte nationale…",
@@ -154,9 +150,7 @@ const fr = {
   save: "Enregistrer",
   saved: "Relevé enregistré sur l'appareil.",
   sendMail: "Envoyer par e-mail",
-  mailHint: (addr: string) =>
-    `Le PDF est d'abord téléchargé sur votre appareil, puis votre application e-mail s'ouvre avec le message prêt pour ${addr}. Joignez le PDF téléchargé avant d'envoyer (un navigateur ne peut pas le joindre tout seul).`,
-  mailed: "PDF téléchargé. Votre e-mail est prêt : joignez le fichier téléchargé avant l'envoi.",
+  mailed: "PDF téléchargé : joignez-le à l'e-mail qui s'ouvre.",
   mailSubject: (kind: string, place: string, date: string) => `Relevé StorMe - ${kind} - ${place} - ${date}`,
   mailBody: (kind: string, place: string, date: string, e: string, n: string, who: string) =>
     `Bonjour,\n\nVeuillez trouver ci-joint le relevé StorMe (PDF en pièce jointe).\n\nProcessus : ${kind}\nCommune : ${place}\nDate : ${date}\nMN95 : X ${e} / Y ${n}\n\nCordialement,\n${who}`,
@@ -164,6 +158,11 @@ const fr = {
   recapEdit: "Modifier",
   notFilled: "Non renseigné",
   exportTitle: "Export",
+  forwardTo: (addr: string) => `À transférer à ${addr} (SFN)`,
+  shared: "Rapport partagé.",
+  recordsTitle: (n: number) => (n > 1 ? `Mes relevés (${n})` : `Mon relevé (${n})`),
+  statusReady: "Prêt à exporter",
+  statusDraft: "À compléter",
   pdfFormMissing: "Le formulaire officiel est introuvable.",
   pdfHeader: "Aléa  ·  annexe au rapport simplifié",
   pdfMapTitle: "Position de l'aléa sur la carte nationale",
@@ -246,8 +245,6 @@ const de: Dict = {
   "processus.crue.hint": "Auch Seitenerosion und Geschiebe",
   processNote:
     "Nur ein Hauptprozess. Er kreuzt das entsprechende Kästchen im Freiburger Formular an.",
-  processNote2:
-    "Einsturz und Steinschlag kreuzen beide «Sturz / Felssturz» an. Der genaue Typ steht in der Beschreibung.",
   pdfTypePrefix: "Typ",
 
   "importance.negligeable": "Vernachlässigbar",
@@ -301,7 +298,7 @@ const de: Dict = {
   reporterLabel: "Name und Funktion des Berichterstatters",
   reportDate: "Datum des Berichts",
   photosTitle: "Fotos des Prozesses",
-  photosHint: "Sie werden im Anhang des PDF eingefügt. Punkt 10 des Formulars bleibt leer.",
+  photosHint: "Sie werden im Anhang des PDF eingefügt.",
   takePhoto: "Aufnehmen",
   gallery: "Galerie",
   remove: "Entfernen",
@@ -310,8 +307,6 @@ const de: Dict = {
   photoUnreadable: "Ein Foto konnte nicht gelesen werden. Verwenden Sie JPG oder PNG.",
   hazardNotChosen: "Gefahr nicht gewählt",
   communeNotEntered: "Gemeinde nicht eingegeben",
-  closeNote:
-    "Das PDF übernimmt das Formular des Staates Freiburg. Die StorMe-Nr. und Punkt 10 bleiben leer, alle Felder bleiben bearbeitbar. Die Topokarte und die Fotos folgen im Anhang. Die Kästchen «Versand .shp / .jpg» sind nicht angekreuzt.",
   missingBefore: (list: string) => `Vor dem Export fehlt: ${list}.`,
   ready: "Bereit zum Export.",
   preparingMap: "Landeskarte wird vorbereitet…",
@@ -329,9 +324,7 @@ const de: Dict = {
   save: "Speichern",
   saved: "Erhebung auf dem Gerät gespeichert.",
   sendMail: "Per E-Mail senden",
-  mailHint: (addr: string) =>
-    `Das PDF wird zuerst auf Ihr Gerät heruntergeladen, danach öffnet sich Ihre E-Mail-App mit der vorbereiteten Nachricht an ${addr}. Hängen Sie das heruntergeladene PDF vor dem Senden an (ein Browser kann es nicht selbst anhängen).`,
-  mailed: "PDF heruntergeladen. Ihre E-Mail ist bereit: Hängen Sie die heruntergeladene Datei vor dem Senden an.",
+  mailed: "PDF heruntergeladen: Hängen Sie es an die sich öffnende E-Mail an.",
   mailSubject: (kind: string, place: string, date: string) => `StorMe-Erhebung - ${kind} - ${place} - ${date}`,
   mailBody: (kind: string, place: string, date: string, e: string, n: string, who: string) =>
     `Guten Tag\n\nIm Anhang finden Sie die StorMe-Erhebung (PDF).\n\nProzess: ${kind}\nGemeinde: ${place}\nDatum: ${date}\nLV95: X ${e} / Y ${n}\n\nFreundliche Grüsse\n${who}`,
@@ -339,6 +332,11 @@ const de: Dict = {
   recapEdit: "Ändern",
   notFilled: "Nicht ausgefüllt",
   exportTitle: "Export",
+  forwardTo: (addr: string) => `Weiterzuleiten an ${addr} (SFN)`,
+  shared: "Bericht geteilt.",
+  recordsTitle: (n: number) => (n > 1 ? `Meine Erhebungen (${n})` : `Meine Erhebung (${n})`),
+  statusReady: "Bereit zum Export",
+  statusDraft: "Zu vervollständigen",
   pdfFormMissing: "Das offizielle Formular wurde nicht gefunden.",
   pdfHeader: "Aléa  ·  Anhang zum vereinfachten Bericht",
   pdfMapTitle: "Lage der Gefahr auf der Landeskarte",
