@@ -119,7 +119,7 @@ const fr = {
   discussWith: "Mesures à discuter avec",
   proposals: "Propositions de mesures",
   proposalsHint: "Assainissement, sécurisation, organisation.",
-  remarks: "Remarques / divers",
+  remarks: "11. Remarques / divers",
 
   // close
   reporterLabel: "Nom et fonction du rapporteur",
@@ -149,6 +149,21 @@ const fr = {
   and: " et ",
 
   // pdf
+  "step.8.title": "Récapitulatif",
+  "step.8.kicker": "Vérifier avant l'export",
+  save: "Enregistrer",
+  saved: "Relevé enregistré sur l'appareil.",
+  sendMail: "Envoyer par e-mail",
+  mailHint: (addr: string) =>
+    `Le PDF est d'abord téléchargé sur votre appareil, puis votre application e-mail s'ouvre avec le message prêt pour ${addr}. Joignez le PDF téléchargé avant d'envoyer (un navigateur ne peut pas le joindre tout seul).`,
+  mailed: "PDF téléchargé. Votre e-mail est prêt : joignez le fichier téléchargé avant l'envoi.",
+  mailSubject: (kind: string, place: string, date: string) => `Relevé StorMe - ${kind} - ${place} - ${date}`,
+  mailBody: (kind: string, place: string, date: string, e: string, n: string, who: string) =>
+    `Bonjour,\n\nVeuillez trouver ci-joint le relevé StorMe (PDF en pièce jointe).\n\nProcessus : ${kind}\nCommune : ${place}\nDate : ${date}\nMN95 : X ${e} / Y ${n}\n\nCordialement,\n${who}`,
+  recapIntro: "Relisez le relevé. Touchez « Modifier » pour corriger une rubrique, puis exportez ou envoyez.",
+  recapEdit: "Modifier",
+  notFilled: "Non renseigné",
+  exportTitle: "Export",
   pdfFormMissing: "Le formulaire officiel est introuvable.",
   pdfHeader: "Aléa  ·  annexe au rapport simplifié",
   pdfMapTitle: "Position de l'aléa sur la carte nationale",
@@ -281,7 +296,7 @@ const de: Dict = {
   discussWith: "Massnahmen zu besprechen mit",
   proposals: "Massnahmenvorschläge",
   proposalsHint: "Sanierung, Sicherung, Organisation.",
-  remarks: "Bemerkungen / Verschiedenes",
+  remarks: "11. Bemerkungen / Verschiedenes",
 
   reporterLabel: "Name und Funktion des Berichterstatters",
   reportDate: "Datum des Berichts",
@@ -309,6 +324,21 @@ const de: Dict = {
   "missing.reporter": "der Name des Berichterstatters",
   and: " und ",
 
+  "step.8.title": "Zusammenfassung",
+  "step.8.kicker": "Vor dem Export prüfen",
+  save: "Speichern",
+  saved: "Erhebung auf dem Gerät gespeichert.",
+  sendMail: "Per E-Mail senden",
+  mailHint: (addr: string) =>
+    `Das PDF wird zuerst auf Ihr Gerät heruntergeladen, danach öffnet sich Ihre E-Mail-App mit der vorbereiteten Nachricht an ${addr}. Hängen Sie das heruntergeladene PDF vor dem Senden an (ein Browser kann es nicht selbst anhängen).`,
+  mailed: "PDF heruntergeladen. Ihre E-Mail ist bereit: Hängen Sie die heruntergeladene Datei vor dem Senden an.",
+  mailSubject: (kind: string, place: string, date: string) => `StorMe-Erhebung - ${kind} - ${place} - ${date}`,
+  mailBody: (kind: string, place: string, date: string, e: string, n: string, who: string) =>
+    `Guten Tag\n\nIm Anhang finden Sie die StorMe-Erhebung (PDF).\n\nProzess: ${kind}\nGemeinde: ${place}\nDatum: ${date}\nLV95: X ${e} / Y ${n}\n\nFreundliche Grüsse\n${who}`,
+  recapIntro: "Lesen Sie die Erhebung durch. Tippen Sie auf «Ändern», um eine Rubrik zu korrigieren, und exportieren oder senden Sie dann.",
+  recapEdit: "Ändern",
+  notFilled: "Nicht ausgefüllt",
+  exportTitle: "Export",
   pdfFormMissing: "Das offizielle Formular wurde nicht gefunden.",
   pdfHeader: "Aléa  ·  Anhang zum vereinfachten Bericht",
   pdfMapTitle: "Lage der Gefahr auf der Landeskarte",

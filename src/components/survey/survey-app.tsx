@@ -4,11 +4,15 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  Check,
   FileDown,
   ImagePlus,
   LocateFixed,
+  Mail,
   Mountain,
+  Pencil,
   Plus,
+  Save,
   Snowflake,
   Trash2,
   UnfoldVertical,
@@ -18,6 +22,7 @@ import {
 import { Mark } from "@/components/survey/logo";
 import { useI18n, type Dict, type Lang } from "@/lib/i18n";
 import { FieldMap } from "@/components/survey/field-map";
+import { HazardScene, HeroScene, RidgeStrip } from "@/components/survey/art";
 import { communeFromLv95 } from "@/lib/releve/commune";
 import { groupDigits, inSwitzerland, lv95ToWgs, parseCoord, wgsToLv95 } from "@/lib/releve/coords";
 import { deleteReleve, listReleves, rememberRapporteur, rememberedRapporteur, saveReleve } from "@/lib/releve/db";
@@ -36,7 +41,10 @@ import {
   type Releve,
 } from "@/lib/releve/types";
 
-const STEP_COUNT = 8;
+const STEP_COUNT = 9;
+const MAIL_TO = "laurent.aubin@fr.ch";
+
+type ExportState = "idle" | "map" | "pdf" | "done" | "mailed" | "error";
 
 const ICONS: Record<ProcessusId, LucideIcon> = {
   chute: Mountain,
@@ -47,7 +55,7 @@ const ICONS: Record<ProcessusId, LucideIcon> = {
 };
 
 const inputClass =
-  "w-full rounded-lg border border-line bg-surface px-3 py-3 text-base text-ink outline-none focus-visible:border-pine";
+  "block w-full min-w-0 max-w-full appearance-none rounded-lg border border-line bg-surface px-3 py-3 text-base text-ink outline-none focus-visible:border-pine [&::-webkit-date-and-time-value]:text-left min-h-12";
 
 function Field({
   label,
@@ -59,7 +67,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span className="block text-sm font-semibold text-ink">{label}</span>
       {hint ? <span className="mt-1 block text-sm leading-snug text-muted">{hint}</span> : null}
       <div className="mt-2">{children}</div>
@@ -164,10 +172,11 @@ function LangSwitch({ className = "" }: { className?: string }) {
 function Shell({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   return (
-    <div className="min-h-screen bg-bg text-ink">
-      <header className="bg-pine pt-safe text-bg">
-        <div className="mx-auto flex max-w-xl items-center gap-3 px-4 py-4">
-          <Mark className="h-10 w-10 text-bg" />
+    <div className="topo-bg min-h-screen text-ink">
+      <header className="relative overflow-hidden bg-pine pt-safe text-bg">
+        <HeroScene className="absolute inset-0 h-full w-full" />
+        <div className="relative mx-auto flex max-w-xl items-center gap-3 px-4 pb-14 pt-5">
+          <Mark className="h-11 w-11 text-bg" />
           <div className="min-w-0 flex-1">
             <p className="font-display text-2xl leading-none">Aléa</p>
             <p className="mt-1 text-sm text-bg/80">{t("appTagline")}</p>
@@ -357,7 +366,7 @@ function Wizard({
   const [communeBusy, setCommuneBusy] = useState(false);
   const [communeNote, setCommuneNote] = useState<keyof Dict | null>(null);
   const [photoError, setPhotoError] = useState<keyof Dict | null>(null);
-  const [exportState, setExportState] = useState<"idle" | "map" | "pdf" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportError, setExportError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const latest = useRef(draft);
@@ -471,18 +480,27 @@ function Wizard({
   const north = parseCoord(draft.y);
   const outside = east != null && north != null && !inSwitzerland(east, north);
 
-  async function exportPdf() {
-    if (missing.length) return;
+  async function persist() {
+    const saved = { ...draft, updatedAt: new Date().toISOString() };
+    await saveReleve(saved);
+    onSaved(saved);
+    return saved;
+  }
+
+  async function makePdf() {
     setExportState("map");
     setExportError(null);
+    const map = draft.lat != null && draft.lng != null ? await renderTopoPng(draft.lat, draft.lng) : null;
+    setExportState("pdf");
+    return buildRelevePdf(draft, map, lang);
+  }
+
+  async function exportPdf() {
+    if (missing.length) return;
     try {
-      const map = draft.lat != null && draft.lng != null ? await renderTopoPng(draft.lat, draft.lng) : null;
-      setExportState("pdf");
-      const { bytes, filename } = await buildRelevePdf(draft, map, lang);
+      const { bytes, filename } = await makePdf();
       savePdfFile(bytes, filename);
-      const saved = { ...draft, updatedAt: new Date().toISOString() };
-      await saveReleve(saved);
-      onSaved(saved);
+      await persist();
       setExportState("done");
     } catch (error) {
       setExportState("error");
@@ -490,12 +508,43 @@ function Wizard({
     }
   }
 
+  async function sendMail() {
+    if (missing.length) return;
+    try {
+      const { bytes, filename } = await makePdf();
+      savePdfFile(bytes, filename);
+      await persist();
+      const kind = draft.processus ? t(`processus.${draft.processus}.label` as keyof Dict) : t("hazardNotChosen");
+      const place = draft.commune.trim() || t("pdfPlaceUnknown");
+      const day = formatListDate(draft.date) ?? "";
+      const subject = d.mailSubject(kind, place, day);
+      const body = d.mailBody(kind, place, day, groupDigits(draft.x), groupDigits(draft.y), draft.rapporteur.trim());
+      setExportState("mailed");
+      window.setTimeout(() => {
+        window.location.href = `mailto:${MAIL_TO}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 600);
+    } catch (error) {
+      setExportState("error");
+      setExportError(error instanceof Error ? error.message : t("exportFailed"));
+    }
+  }
+
+  async function saveOnly() {
+    try {
+      const saved = await persist();
+      onClose(saved);
+    } catch {
+      /* l'enregistrement automatique reste actif */
+    }
+  }
+
   const stepKey = (part: "title" | "kicker", index = step) => t(`step.${index}.${part}` as keyof Dict);
 
   return (
-    <div className="min-h-screen bg-bg text-ink">
-      <header className="sticky top-0 z-20 bg-pine pt-safe text-bg">
-        <div className="mx-auto flex max-w-xl items-center gap-3 px-3 py-3">
+    <div className="topo-bg min-h-screen text-ink">
+      <header className="sticky top-0 z-20 overflow-hidden bg-pine pt-safe text-bg shadow-[0_2px_0_0_#c65d12]">
+        <RidgeStrip className="pointer-events-none absolute bottom-0 right-0 h-full w-2/3" />
+        <div className="relative mx-auto flex max-w-xl items-center gap-3 px-3 py-3">
           <button
             type="button"
             className="flex h-11 w-11 items-center justify-center rounded-lg text-bg"
@@ -512,7 +561,7 @@ function Wizard({
           </div>
           <LangSwitch />
         </div>
-        <div className="mx-auto flex max-w-xl gap-1 px-4 pb-3">
+        <div className="relative mx-auto flex max-w-xl gap-1 px-4 pb-3">
           {Array.from({ length: STEP_COUNT }, (_, index) => (
             <button
               key={index}
@@ -547,7 +596,7 @@ function Wizard({
             <Field label={t("date")} hint={t("dateHint")}>
               <input className={inputClass} type="date" value={draft.date} onChange={(event) => patch({ date: event.target.value })} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
               <Field label={t("time")}>
                 <input className={inputClass} type="time" value={draft.heure} onChange={(event) => patch({ heure: event.target.value })} />
               </Field>
@@ -622,26 +671,30 @@ function Wizard({
             <Field label={t("proposals")} hint={t("proposalsHint")}>
               <textarea className={`${inputClass} min-h-32`} value={draft.propositions} onChange={(event) => patch({ propositions: event.target.value })} />
             </Field>
-            <Field label={t("remarks")}>
-              <textarea className={`${inputClass} min-h-28`} value={draft.remarques} onChange={(event) => patch({ remarques: event.target.value })} />
-            </Field>
           </div>
         ) : null}
         {step === 7 ? (
           <StepClose
             draft={draft}
-            missing={missing}
             photoError={photoError}
-            exportState={exportState}
-            exportError={exportError}
             confirmDelete={confirmDelete}
             onPatch={patch}
             onAddFiles={addFiles}
             onRemovePhoto={(id) => patch({ photos: draft.photos.filter((photo) => photo.id !== id) })}
-            onExport={exportPdf}
             onAskDelete={() => setConfirmDelete(true)}
             onCancelDelete={() => setConfirmDelete(false)}
             onDelete={() => onDelete(draft.id)}
+          />
+        ) : null}
+        {step === 8 ? (
+          <StepRecap
+            draft={draft}
+            missing={missing}
+            exportState={exportState}
+            exportError={exportError}
+            onGo={setStep}
+            onExport={exportPdf}
+            onMail={sendMail}
           />
         ) : null}
       </main>
@@ -650,12 +703,13 @@ function Wizard({
         <div className="mx-auto flex max-w-xl gap-2 px-4 py-3">
           <button
             type="button"
-            className="inline-flex h-12 flex-1 items-center justify-center gap-1 rounded-xl border border-line text-sm font-semibold text-ink disabled:opacity-40"
+            className={`inline-flex h-12 items-center justify-center gap-1 rounded-xl border border-line text-sm font-semibold text-ink disabled:opacity-40 ${step === STEP_COUNT - 1 ? "w-12 shrink-0" : "flex-1"}`}
             disabled={step === 0}
+            aria-label={t("previous")}
             onClick={() => setStep((value) => Math.max(0, value - 1))}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            {t("previous")}
+            {step === STEP_COUNT - 1 ? null : t("previous")}
           </button>
           {step < STEP_COUNT - 1 ? (
             <button
@@ -667,15 +721,25 @@ function Wizard({
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           ) : (
-            <button
-              type="button"
-              className="inline-flex h-12 flex-1 items-center justify-center gap-1 rounded-xl bg-amber text-sm font-semibold text-bg disabled:opacity-40"
-              disabled={missing.length > 0 || exportState === "map" || exportState === "pdf"}
-              onClick={exportPdf}
-            >
-              <FileDown className="h-4 w-4" aria-hidden="true" />
-              {t("exportPdf")}
-            </button>
+            <>
+              <button
+                type="button"
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-pine text-sm font-semibold text-pine"
+                onClick={saveOnly}
+              >
+                <Save className="h-4 w-4" aria-hidden="true" />
+                {t("save")}
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-amber text-sm font-semibold text-bg disabled:opacity-40"
+                disabled={missing.length > 0 || exportState === "map" || exportState === "pdf"}
+                onClick={exportPdf}
+              >
+                <FileDown className="h-4 w-4" aria-hidden="true" />
+                {t("exportPdf")}
+              </button>
+            </>
           )}
         </div>
       </footer>
@@ -694,13 +758,11 @@ function missingBits(releve: Releve, d: Dict): string[] {
 
 function StepProcess({ value, onChange }: { value: ProcessusId | ""; onChange: (id: ProcessusId) => void }) {
   const { t } = useI18n();
-  const featured = PROCESSUS.filter((item) => item.featured);
-  const extra = PROCESSUS.filter((item) => !item.featured);
   return (
     <div className="space-y-3">
       <p className="text-sm leading-relaxed text-muted">{t("processNote")}</p>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {featured.map((item) => {
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+        {PROCESSUS.map((item) => {
           const Icon = ICONS[item.id];
           const active = value === item.id;
           return (
@@ -709,37 +771,25 @@ function StepProcess({ value, onChange }: { value: ProcessusId | ""; onChange: (
               type="button"
               aria-pressed={active}
               onClick={() => onChange(item.id)}
-              className={`rounded-xl border px-3 py-4 text-left ${choiceClass(active)}`}
+              className={`overflow-hidden rounded-xl border p-2 text-left ${choiceClass(active)} ${item.id === "crue" ? "min-[420px]:col-span-2" : ""}`}
             >
-              <Icon className="h-5 w-5" aria-hidden="true" />
-              <span className="mt-3 block text-base font-semibold leading-snug">{t(`processus.${item.id}.label` as keyof Dict)}</span>
-              <span className={`mt-1 block text-sm ${active ? "text-bg/80" : "text-muted"}`}>{t(`processus.${item.id}.hint` as keyof Dict)}</span>
+              <HazardScene id={item.id} className={`w-full rounded-lg ${item.id === "crue" ? "h-24" : "h-28"}`} />
+              <span className="mt-3 flex items-start gap-2 px-1 pb-1">
+                <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-base font-semibold leading-snug">
+                    {t(`processus.${item.id}.label` as keyof Dict)}
+                  </span>
+                  <span className={`mt-1 block text-sm ${active ? "text-bg/80" : "text-muted"}`}>
+                    {t(`processus.${item.id}.hint` as keyof Dict)}
+                  </span>
+                </span>
+              </span>
             </button>
           );
         })}
       </div>
-      {extra.map((item) => {
-        const Icon = ICONS[item.id];
-        const active = value === item.id;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(item.id)}
-            className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left ${choiceClass(active)}`}
-          >
-            <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-            <span>
-              <span className="block text-sm font-semibold">{t(`processus.${item.id}.label` as keyof Dict)}</span>
-              <span className={`block text-sm ${active ? "text-bg/80" : "text-muted"}`}>{t(`processus.${item.id}.hint` as keyof Dict)}</span>
-            </span>
-          </button>
-        );
-      })}
-      <p className="text-sm leading-relaxed text-muted">
-        {t("processNote2")}
-      </p>
+      <p className="text-sm leading-relaxed text-muted">{t("processNote2")}</p>
     </div>
   );
 }
@@ -785,7 +835,7 @@ function StepPlace({
         {gpsBusy ? t("locating") : t("useMyPosition")}
       </button>
       {gpsError ? <p className="text-sm text-ink">{t(gpsError)}</p> : null}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
         <Field label={t("xLabel")}>
           <input
             className={inputClass}
@@ -826,38 +876,32 @@ function StepPlace({
 
 function StepClose({
   draft,
-  missing,
   photoError,
-  exportState,
-  exportError,
   confirmDelete,
   onPatch,
   onAddFiles,
   onRemovePhoto,
-  onExport,
   onAskDelete,
   onCancelDelete,
   onDelete,
 }: {
   draft: Releve;
-  missing: string[];
   photoError: keyof Dict | null;
-  exportState: "idle" | "map" | "pdf" | "done" | "error";
-  exportError: string | null;
   confirmDelete: boolean;
   onPatch: (partial: Partial<Releve>) => void;
   onAddFiles: (files: FileList | null) => void;
   onRemovePhoto: (id: string) => void;
-  onExport: () => void;
   onAskDelete: () => void;
   onCancelDelete: () => void;
   onDelete: () => void;
 }) {
   const urls = usePhotoUrls(draft.photos);
   const { t, d } = useI18n();
-  const option = processusById(draft.processus);
   return (
     <div className="space-y-5">
+      <Field label={t("remarks")}>
+        <textarea className={`${inputClass} min-h-28`} value={draft.remarques} onChange={(event) => onPatch({ remarques: event.target.value })} />
+      </Field>
       <Field label={t("reporterLabel")}>
         <input className={inputClass} autoComplete="name" value={draft.rapporteur} onChange={(event) => onPatch({ rapporteur: event.target.value })} />
       </Field>
@@ -874,7 +918,7 @@ function StepClose({
             {t("takePhoto")}
             <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => { onAddFiles(event.target.files); event.target.value = ""; }} />
           </label>
-          <label className="flex h-12 items-center justify-center gap-2 rounded-xl border border-line text-sm font-semibold text-ink">
+          <label className="flex h-12 items-center justify-center gap-2 rounded-xl border border-line bg-surface text-sm font-semibold text-ink">
             <ImagePlus className="h-4 w-4" aria-hidden="true" />
             {t("gallery")}
             <input className="sr-only" type="file" accept="image/*" multiple onChange={(event) => { onAddFiles(event.target.files); event.target.value = ""; }} />
@@ -904,35 +948,6 @@ function StepClose({
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-line bg-surface px-4 py-4 text-sm leading-relaxed text-ink">
-        <p className="font-semibold">{option ? t(`processus.${option.id}.label` as keyof Dict) : t("hazardNotChosen")}</p>
-        <p className="mt-1 text-muted">
-          {draft.commune || t("communeNotEntered")}
-          {draft.x && draft.y ? ` · X ${groupDigits(draft.x)} / Y ${groupDigits(draft.y)}` : ""}
-        </p>
-        <p className="mt-3">
-          {t("closeNote")}
-        </p>
-        {missing.length > 0 ? (
-          <p className="mt-3 font-semibold">{d.missingBefore(missing.join(", "))}</p>
-        ) : (
-          <p className="mt-3 text-muted">{t("ready")}</p>
-        )}
-        {exportState === "map" ? <p className="mt-2">{t("preparingMap")}</p> : null}
-        {exportState === "pdf" ? <p className="mt-2">{t("writingReport")}</p> : null}
-        {exportState === "done" ? <p className="mt-2">{t("exported")}</p> : null}
-        {exportError ? <p className="mt-2">{exportError}</p> : null}
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={missing.length > 0 || exportState === "map" || exportState === "pdf"}
-          className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-amber text-sm font-semibold text-bg disabled:opacity-40"
-        >
-          <FileDown className="h-4 w-4" aria-hidden="true" />
-          {t("exportPdf")}
-        </button>
-      </div>
-
       <div className="flex justify-end">
         {confirmDelete ? (
           <div className="flex gap-2">
@@ -948,6 +963,188 @@ function StepClose({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function RecapSection({
+  title,
+  step,
+  onGo,
+  children,
+}: {
+  title: string;
+  step: number;
+  onGo: (step: number) => void;
+  children: React.ReactNode;
+}) {
+  const { t } = useI18n();
+  return (
+    <section className="overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="flex items-center justify-between gap-2 border-b border-line bg-bg/60 px-4 py-2">
+        <h2 className="font-display text-lg text-pine">{title}</h2>
+        <button
+          type="button"
+          onClick={() => onGo(step)}
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-semibold text-pine"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          {t("recapEdit")}
+        </button>
+      </div>
+      <div className="space-y-3 px-4 py-3">{children}</div>
+    </section>
+  );
+}
+
+function RecapRow({ label, value }: { label: string; value: string }) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-0.5 whitespace-pre-wrap break-words text-base leading-snug text-ink">
+        {value.trim() ? value : <span className="text-muted">{t("notFilled")}</span>}
+      </p>
+    </div>
+  );
+}
+
+function StepRecap({
+  draft,
+  missing,
+  exportState,
+  exportError,
+  onGo,
+  onExport,
+  onMail,
+}: {
+  draft: Releve;
+  missing: string[];
+  exportState: ExportState;
+  exportError: string | null;
+  onGo: (step: number) => void;
+  onExport: () => void;
+  onMail: () => void;
+}) {
+  const { t, d } = useI18n();
+  const urls = usePhotoUrls(draft.photos);
+  const option = processusById(draft.processus);
+  const busy = exportState === "map" || exportState === "pdf";
+  const label = (key: string) => t(key as keyof Dict);
+  return (
+    <div className="space-y-4">
+      <p className="text-sm leading-relaxed text-muted">{t("recapIntro")}</p>
+
+      <RecapSection title={t("step.0.title")} step={0} onGo={onGo}>
+        {option ? (
+          <div className="overflow-hidden rounded-lg border border-line">
+            <HazardScene id={option.id} className="h-20 w-full" />
+            <p className="px-3 py-2 font-semibold">{label(`processus.${option.id}.label`)}</p>
+          </div>
+        ) : (
+          <RecapRow label={t("step.0.title")} value="" />
+        )}
+      </RecapSection>
+
+      <RecapSection title={t("step.1.title")} step={1} onGo={onGo}>
+        <RecapRow label={t("commune")} value={draft.commune} />
+        <RecapRow
+          label="MN95 / LV95"
+          value={draft.x && draft.y ? `X ${groupDigits(draft.x)}  ·  Y ${groupDigits(draft.y)}` : ""}
+        />
+      </RecapSection>
+
+      <RecapSection title={t("step.2.title")} step={2} onGo={onGo}>
+        <RecapRow label={t("date")} value={formatListDate(draft.date) ?? ""} />
+        <div className="grid grid-cols-2 gap-3">
+          <RecapRow label={t("time")} value={draft.heure} />
+          <RecapRow label={t("duration")} value={draft.duree} />
+        </div>
+      </RecapSection>
+
+      <RecapSection title={t("step.3.title")} step={3} onGo={onGo}>
+        <RecapRow label={t("descLabel")} value={draft.description} />
+      </RecapSection>
+
+      <RecapSection title={t("step.4.title")} step={4} onGo={onGo}>
+        <RecapRow label={t("causesLabel")} value={draft.causes} />
+        <RecapRow label={t("damageLabel")} value={draft.degats} />
+      </RecapSection>
+
+      <RecapSection title={t("step.5.title")} step={5} onGo={onGo}>
+        <RecapRow label={t("risksLabel")} value={draft.risques} />
+        <RecapRow label={t("importanceLabel")} value={draft.importance ? label(`importance.${draft.importance}`) : ""} />
+      </RecapSection>
+
+      <RecapSection title={t("step.6.title")} step={6} onGo={onGo}>
+        <RecapRow label={t("measuresLabel")} value={draft.mesures ? label(`mesures.${draft.mesures}`) : ""} />
+        <RecapRow label={t("organizedBy")} value={draft.organiseesPar} />
+        <RecapRow label={t("discussWith")} value={draft.discuterAvec} />
+        <RecapRow label={t("proposals")} value={draft.propositions} />
+      </RecapSection>
+
+      <RecapSection title={t("step.7.title")} step={7} onGo={onGo}>
+        <RecapRow label={t("remarks")} value={draft.remarques} />
+        <RecapRow label={t("reporterLabel")} value={draft.rapporteur} />
+        <RecapRow label={t("reportDate")} value={formatListDate(draft.dateRapport) ?? ""} />
+        {draft.photos.length > 0 ? (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              {t("photosTitle")} · {d.photoCount(draft.photos.length)}
+            </p>
+            <ul className="mt-2 grid grid-cols-4 gap-1.5">
+              {draft.photos.map((photo) => (
+                <li key={photo.id}>
+                  {urls[photo.id] ? (
+                    <img src={urls[photo.id]} alt={photo.name} className="aspect-square w-full rounded-md object-cover" />
+                  ) : (
+                    <div className="aspect-square w-full rounded-md bg-line" />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </RecapSection>
+
+      <section className="rounded-xl border-2 border-pine bg-surface px-4 py-4">
+        <h2 className="font-display text-lg text-pine">{t("exportTitle")}</h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted">{t("closeNote")}</p>
+        {missing.length > 0 ? (
+          <p className="mt-3 text-sm font-semibold text-ink">{d.missingBefore(missing.join(", "))}</p>
+        ) : (
+          <p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-pine">
+            <Check className="h-4 w-4" aria-hidden="true" />
+            {t("ready")}
+          </p>
+        )}
+        <div className="mt-4 space-y-2">
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={missing.length > 0 || busy}
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-amber text-sm font-semibold text-bg disabled:opacity-40"
+          >
+            <FileDown className="h-4 w-4" aria-hidden="true" />
+            {t("exportPdf")}
+          </button>
+          <button
+            type="button"
+            onClick={onMail}
+            disabled={missing.length > 0 || busy}
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-pine text-sm font-semibold text-bg disabled:opacity-40"
+          >
+            <Mail className="h-4 w-4" aria-hidden="true" />
+            {t("sendMail")}
+          </button>
+          <p className="text-xs leading-relaxed text-muted">{d.mailHint(MAIL_TO)}</p>
+        </div>
+        {exportState === "map" ? <p className="mt-3 text-sm">{t("preparingMap")}</p> : null}
+        {exportState === "pdf" ? <p className="mt-3 text-sm">{t("writingReport")}</p> : null}
+        {exportState === "done" ? <p className="mt-3 text-sm font-semibold text-pine">{t("exported")}</p> : null}
+        {exportState === "mailed" ? <p className="mt-3 text-sm font-semibold text-pine">{t("mailed")}</p> : null}
+        {exportError ? <p className="mt-3 text-sm text-ink">{exportError}</p> : null}
+      </section>
     </div>
   );
 }

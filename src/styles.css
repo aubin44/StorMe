@@ -18,6 +18,15 @@
   --color-amber: #c65d12;
 }
 
+
+@layer base {
+  .topo-bg {
+    background-color: var(--color-bg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='360' viewBox='0 0 360 360' fill='none' stroke='%231b3a2f' stroke-opacity='.075' stroke-width='1.2'%3E%3Cpath d='M-20 70C40 30 100 110 170 66S290 24 380 76'/%3E%3Cpath d='M-20 96C40 56 100 136 170 92S290 50 380 102'/%3E%3Cpath d='M-20 122C40 82 100 162 170 118S290 76 380 128'/%3E%3Cellipse cx='250' cy='250' rx='84' ry='52'/%3E%3Cellipse cx='250' cy='250' rx='62' ry='37'/%3E%3Cellipse cx='250' cy='250' rx='40' ry='22'/%3E%3Cellipse cx='250' cy='250' rx='18' ry='8'/%3E%3Cpath d='M-20 300C50 270 110 330 190 300'/%3E%3Cpath d='M-20 324C50 294 110 354 190 324'/%3E%3C/svg%3E");
+    background-attachment: fixed;
+  }
+}
+
 @layer base {
   html {
     background: var(--color-bg);

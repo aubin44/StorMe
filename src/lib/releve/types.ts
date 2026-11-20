@@ -105,7 +105,6 @@ export function blankReleve(rapporteur = ""): Releve {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const heure = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const stamp = now.toISOString();
   return {
     id: crypto.randomUUID(),
@@ -118,7 +117,7 @@ export function blankReleve(rapporteur = ""): Releve {
     lat: null,
     lng: null,
     date,
-    heure,
+    heure: "",
     duree: "",
     description: "",
     causes: "",
